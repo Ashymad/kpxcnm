@@ -22,6 +22,11 @@ class kpxc:
         self.kpxc_proxy.stdin.write(struct.pack('I',len(message)))
         self.kpxc_proxy.stdin.write(message)
         self.kpxc_proxy.stdin.flush()
+    def _read_message(self):
+        txt_len_b = self.kpxc_proxy.stdout.read(4);
+        if txt_len_b == 0: return
+        txt_len = struct.unpack('i', txt_len_b)[0]
+        return self.kpxc_proxy.stdout.read(txt_len).decode('UTF-8')
     def change_public_keys(self):
         self._send_message({
             'action' : 'change-public-keys',
@@ -31,8 +36,7 @@ class kpxc:
                 nacl.utils.random(self.NONCE_SIZE)).decode('UTF-8'),
             'clientID' : self.client_id
         })
-        txt_len = struct.unpack('i', self.kpxc_proxy.stdout.read(4))[0]
-        print(self.kpxc_proxy.stdout.read(txt_len).decode('UTF-8'))
+        print(self._read_message())
 
 
 
