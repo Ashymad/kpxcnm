@@ -49,6 +49,11 @@ class kpxc:
         })
     def _read_encrypted_message(self):
         message = self._read_message()
+        if 'error' in message:
+            print('Error ' +
+                  message['errorCode'] + ': ' +
+                  message['error'])
+            return
         return json.loads(self.kp_box.decrypt(
             self._from_b64_str(message['message']),
             self._from_b64_str(message['nonce'])).decode('UTF-8'))
@@ -75,4 +80,10 @@ class kpxc:
         self._send_encrypted_message({
             'action'    : 'associate',
             'key'       : self.pubkey
+        })
+    def generate_password(self):
+        self._send_message({
+            'action'    : 'generate-password',
+            'nonce'     : self._get_nonce(),
+            'clientID'  : self.client_id
         })
