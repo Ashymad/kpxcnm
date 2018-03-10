@@ -87,3 +87,6 @@ class kpxc:
             'nonce'     : self._get_nonce(),
             'clientID'  : self.client_id
         })
+        response = self._read_encrypted_message()
+        if response['success'] == 'true':
+            return response['entries'][0]['password']
