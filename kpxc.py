@@ -41,22 +41,20 @@ class kpxc:
     def _send_encrypted_message(self, message):
         nonce = nacl.utils.random(self.NONCE_SIZE)
         self._send_message({
-            'action'    : message['action'],
-            'message'   : self._to_b64_str(self.kp_box.encrypt(
-                    json.dumps(message).encode('UTF-8'), nonce)),
-            'nonce'     : self._to_b64_str(nonce),
-            'clientID'  : self.client_id
+            'action'        : message['action'],
+            'message'       : self._to_b64_str(self.kp_box.encrypt(
+                json.dumps(message).encode('UTF-8'), nonce).ciphertext),
+            'nonce'         : self._to_b64_str(nonce),
+            'clientID'      : self.client_id,
+            'triggerUnlock' : 'true'
         })
     def _read_encrypted_message(self):
         message = self._read_message()
-        if 'error' in message:
-            print('Error ' +
-                  message['errorCode'] + ': ' +
-                  message['error'])
-            return
-        return json.loads(self.kp_box.decrypt(
-            self._from_b64_str(message['message']),
-            self._from_b64_str(message['nonce'])).decode('UTF-8'))
+        if 'message' in message:
+            return json.loads(self.kp_box.decrypt(
+                self._from_b64_str(message['message']),
+                self._from_b64_str(message['nonce'])).decode('UTF-8'))
+        return message
     def change_public_keys(self):
         self._send_message({
             'action'    : 'change-public-keys',
@@ -76,6 +74,9 @@ class kpxc:
         self._send_encrypted_message({
             'action'    : 'get-databasehash'
         })
+        response = self._read_encrypted_message()
+        if response['success'] == 'true':
+            return response['hash']
     def associate(self):
         self._send_encrypted_message({
             'action'    : 'associate',
@@ -90,3 +91,8 @@ class kpxc:
         response = self._read_encrypted_message()
         if response['success'] == 'true':
             return response['entries'][0]['password']
+    def get_logins(self, url : str):
+        self._send_encrypted_message({
+            'action'    : 'get-logins',
+            'url'       : url
+        })
