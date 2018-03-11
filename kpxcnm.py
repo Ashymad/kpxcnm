@@ -8,7 +8,7 @@ from subprocess import Popen, PIPE, STDOUT
 import struct
 
 
-class kpxc:
+class Kpxcnm:
     CLIENT_ID_SIZE = 24
     NONCE_SIZE = 24
     def __init__(self):
