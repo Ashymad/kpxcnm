@@ -16,8 +16,12 @@ class KeePassError(Exception):
 class Kpxcnm:
     CLIENT_ID_SIZE = 24
     NONCE_SIZE = 24
-    def __init__(self):
-        self.privkey = PrivateKey.generate()
+    def __init__(self, privkey : PrivateKey = None, db_id : str = None):
+        if privkey is None:
+            self.privkey = PrivateKey.generate()
+        else:
+            self.privkey = privkey
+        self.db_id = db_id
         self.client_id = self._to_b64_str(
             nacl.utils.random(self.CLIENT_ID_SIZE))
         self.pubkey = self.privkey.public_key.encode(
