@@ -63,7 +63,7 @@ class Kpxcnm:
             self._from_b64_str(message['nonce'])).decode('UTF-8'))
 
     def _send_encrypted_message(self, message: Dict[str, str],
-                                triggerUnlock: bool = False) -> None:
+                                triggerUnlock: bool) -> None:
         nonce = nacl.utils.random(self.NONCE_SIZE)
         self._send_message({
             'action'        : message['action'],
@@ -99,19 +99,19 @@ class Kpxcnm:
             return is_success
         return False
 
-    def get_databasehash(self) -> str:
+    def get_databasehash(self, triggerUnlock: bool = False) -> str:
         self._send_encrypted_message({
             'action'    : 'get-databasehash'
-        })
+        }, triggerUnlock)
         response = self.read_message()
         if response['success'] == 'true':
             return response['hash']
 
-    def associate(self) -> bool:
+    def associate(self, triggerUnlock: bool = False) -> bool:
         self._send_encrypted_message({
             'action'    : 'associate',
             'key'       : self.pubkey
-        })
+        }, triggerUnlock)
         response = self.read_message()
         is_success = response['success'] == 'true'
         if is_success:
@@ -129,34 +129,36 @@ class Kpxcnm:
             return response['entries'][0]['password']
 
     def get_logins(self, url: str,
-                   submitUrl: str = None) -> List[Dict[str, str]]:
+                   submitUrl: str = None,
+                   triggerUnlock: bool = False) -> List[Dict[str, str]]:
         self._send_encrypted_message({
             'action'    : 'get-logins',
             'url'       : url,
             'submitUrl' : url if submitUrl is None else submitUrl
-        })
+        }, triggerUnlock)
         response = self.read_message()
         if response['success'] == 'true':
             return response['entries']
 
-    def test_associate(self) -> bool:
+    def test_associate(self, triggerUnlock: bool = False) -> bool:
         self._send_encrypted_message({
             'action'    : 'test-associate',
             'id'        : self.db_id,
             'key'       : self.pubkey
-        })
+        }, triggerUnlock)
         response = self.read_message()
         return response['success'] == 'true'
 
-    def lock_database(self) -> bool:
+    def lock_database(self, triggerUnlock: bool = False) -> bool:
         self._send_encrypted_message({
             'action'    : 'lock-database'
-        })
+        }, triggerUnlock)
         self.read_message()
         return True
 
     def set_login(self, username: str,
-                  password: str, url: str) -> bool:
+                  password: str, url: str,
+                  triggerUnlock: bool = False) -> bool:
         self._send_encrypted_message({
             'action'    : 'set-login',
             'id'        : self.db_id,
@@ -164,6 +166,6 @@ class Kpxcnm:
             'password'  : password,
             'url'       : url,
             'submitUrl' : url
-        })
+        }, triggerUnlock)
         response = self.read_message()
         return response['success'] == 'true'
