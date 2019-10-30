@@ -1,12 +1,14 @@
-import nacl.utils
-from nacl import encoding
-from nacl.public import PrivateKey, PublicKey, Box
-
 import json
 import base64 as b64
 from subprocess import Popen, PIPE, STDOUT
 import struct
 from typing import Dict, List
+
+import nacl.utils
+from nacl import encoding
+from nacl.public import PrivateKey, PublicKey, Box
+from uuid import uuid1
+
 
 
 class KeePassError(Exception):
@@ -25,10 +27,13 @@ class Kpxcnm:
         else:
             self.privkey = privkey
         self.db_id = db_id
+        self.db_pubkey = None
+        self.kp_box = None
         self.client_id = self._to_b64_str(
             nacl.utils.random(self.CLIENT_ID_SIZE))
-        self.pubkey = self.privkey.public_key.encode(
-                            encoding.Base64Encoder).decode('UTF-8')
+        self.pubkey = self.privkey\
+                          .public_key.encode(encoding.Base64Encoder)\
+                          .decode('UTF-8')
         self.kpxc_proxy = Popen('keepassxc-proxy', stdout=PIPE,
                                 stdin=PIPE, stderr=STDOUT)
 
@@ -52,7 +57,7 @@ class Kpxcnm:
     def _read_message(self) -> Dict[str, str]:
         txt_len_b = self.kpxc_proxy.stdout.read(4)
         if txt_len_b == 0:
-            return
+            return None
         txt_len = struct.unpack('i', txt_len_b)[0]
         return json.loads(
             self.kpxc_proxy.stdout.read(txt_len).decode('UTF-8'))
@@ -63,15 +68,15 @@ class Kpxcnm:
             self._from_b64_str(message['nonce'])).decode('UTF-8'))
 
     def _send_encrypted_message(self, message: Dict[str, str],
-                                triggerUnlock: bool) -> None:
+                                trigger_unlock: bool) -> None:
         nonce = nacl.utils.random(self.NONCE_SIZE)
         self._send_message({
-            'action'        : message['action'],
-            'message'       : self._to_b64_str(self.kp_box.encrypt(
+            'action':        message['action'],
+            'message':       self._to_b64_str(self.kp_box.encrypt(
                 json.dumps(message).encode('UTF-8'), nonce).ciphertext),
-            'nonce'         : self._to_b64_str(nonce),
-            'clientID'      : self.client_id,
-            'triggerUnlock' : 'true' if triggerUnlock else 'false'
+            'nonce':         self._to_b64_str(nonce),
+            'clientID':      self.client_id,
+            'triggerUnlock': 'true' if trigger_unlock else 'false'
         })
 
     def read_message(self) -> Dict[str, str]:
@@ -84,10 +89,10 @@ class Kpxcnm:
 
     def change_public_keys(self) -> bool:
         self._send_message({
-            'action'    : 'change-public-keys',
-            'publicKey' : self.pubkey,
-            'nonce'     : self._gen_nonce(),
-            'clientID'  : self.client_id
+            'action':    'change-public-keys',
+            'publicKey': self.pubkey,
+            'nonce':     self._gen_nonce(),
+            'clientID':  self.client_id
         })
         response = self.read_message()
         is_success = response['success'] == 'true'
@@ -99,73 +104,101 @@ class Kpxcnm:
             return is_success
         return False
 
-    def get_databasehash(self, triggerUnlock: bool = False) -> str:
+    def get_databasehash(self, trigger_unlock: bool = False) -> str:
         self._send_encrypted_message({
-            'action'    : 'get-databasehash'
-        }, triggerUnlock)
+            'action': 'get-databasehash'
+        }, trigger_unlock)
         response = self.read_message()
         if response['success'] == 'true':
             return response['hash']
 
-    def associate(self, triggerUnlock: bool = False) -> bool:
+    def associate(self, id_key: str = "",
+                  trigger_unlock: bool = False) -> bool:
         self._send_encrypted_message({
-            'action'    : 'associate',
-            'key'       : self.pubkey
-        }, triggerUnlock)
+            'action': 'associate',
+            'key':    self.pubkey,
+            'idKey':  id_key
+        }, trigger_unlock)
         response = self.read_message()
         is_success = response['success'] == 'true'
         if is_success:
             self.db_id = response['id']
         return is_success
 
+    def test_associate(self, trigger_unlock: bool = False) -> bool:
+        self._send_encrypted_message({
+            'action': 'test-associate',
+            'id':     self.db_id,
+            'key':    self.pubkey
+        }, trigger_unlock)
+        response = self.read_message()
+        return response['success'] == 'true'
+
     def generate_password(self) -> str:
         self._send_message({
-            'action'    : 'generate-password',
-            'nonce'     : self._gen_nonce(),
-            'clientID'  : self.client_id
+            'action':   'generate-password',
+            'nonce':    self._gen_nonce(),
+            'clientID': self.client_id
         })
         response = self.read_message()
         if response['success'] == 'true':
             return response['entries'][0]['password']
 
     def get_logins(self, url: str,
-                   submitUrl: str = None,
-                   triggerUnlock: bool = False) -> List[Dict[str, str]]:
+                   submit_url: str = None,
+                   http_auth: bool = False,
+                   trigger_unlock: bool = False) -> List[Dict[str, str]]:
         self._send_encrypted_message({
-            'action'    : 'get-logins',
-            'url'       : url,
-            'submitUrl' : url if submitUrl is None else submitUrl
-        }, triggerUnlock)
+            'action':    'get-logins',
+            'url':       url,
+            'submitUrl': url if submit_url is None else submit_url,
+            'httpAuth':  'true' if http_auth else 'false',
+            'keys': [
+                {
+                    'id':  self.db_id,
+                    'key': self.pubkey
+                }
+            ]
+        }, trigger_unlock)
         response = self.read_message()
         if response['success'] == 'true':
             return response['entries']
 
-    def test_associate(self, triggerUnlock: bool = False) -> bool:
+    def set_login(self, username: str, password: str,
+                  url: str, group: str, group_uuid: str,
+                  uuid: str = None, trigger_unlock: bool = False) -> bool:
         self._send_encrypted_message({
-            'action'    : 'test-associate',
-            'id'        : self.db_id,
-            'key'       : self.pubkey
-        }, triggerUnlock)
+            'action':    'set-login',
+            'url':       url,
+            'submitUrl': url,
+            'id':        self.db_id,
+            'nonce':     self._gen_nonce(),
+            'login':     username,
+            'password':  password,
+            'group':     group,
+            'groupUuid': group_uuid,
+            'uuid':      uuid1().hex if uuid is None else uuid
+        }, trigger_unlock)
         response = self.read_message()
         return response['success'] == 'true'
 
-    def lock_database(self, triggerUnlock: bool = False) -> bool:
+    def get_database_groups(self, trigger_unlock: bool = False) -> Dict[str, any]:
         self._send_encrypted_message({
-            'action'    : 'lock-database'
-        }, triggerUnlock)
+            'action': 'get-database-groups'
+        }, trigger_unlock)
+        return self.read_message()
+
+    def create_new_group(self, group_name: str, trigger_unlock: bool = False) -> str:
+        self._send_encrypted_message({
+            'action': 'create-new-group',
+            'groupName': group_name
+        }, trigger_unlock)
+        return self.read_message()['uuid']
+
+    def lock_database(self, trigger_unlock: bool = False) -> bool:
+        self._send_encrypted_message({
+            'action': 'lock-database'
+        }, trigger_unlock)
         self.read_message()
         return True
 
-    def set_login(self, username: str,
-                  password: str, url: str,
-                  triggerUnlock: bool = False) -> bool:
-        self._send_encrypted_message({
-            'action'    : 'set-login',
-            'id'        : self.db_id,
-            'login'     : username,
-            'password'  : password,
-            'url'       : url,
-            'submitUrl' : url
-        }, triggerUnlock)
-        response = self.read_message()
-        return response['success'] == 'true'
